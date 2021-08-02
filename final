@@ -1,0 +1,244 @@
+---
+- hosts: localhost
+#  vars_file:
+#          - cred.yml
+  tasks:
+
+
+#using default VPC vpc-0694e23cfb1bda350
+
+
+ #creacion de subnet usando vpc default
+      - ec2_vpc_subnet:
+         aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+         aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+         state: present
+         vpc_id: vpc-0694e23cfb1bda350
+         cidr: "172.31.224.0/19"
+         region: us-east-2
+         tags:
+           Name: Subnet pub
+
+      - ec2_vpc_subnet:
+         aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+         aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+         state: present
+         vpc_id: vpc-0694e23cfb1bda350
+         cidr: "172.31.64.0/19"
+         region: us-east-2
+         tags:
+           Name: Subnet priv
+
+#creacion SG
+
+      - name: Creating ec2 group APPSERVER
+        ec2_group:
+          name: SGAPP
+          description: SG APPSERVER
+          vpc_id: vpc-0694e23cfb1bda350
+          region: us-east-2
+          aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+          aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+          rules:
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 172.31.0.0/16
+
+
+          rules_egress:
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 172.31.0.0/16
+
+
+      - name: Creating ec2 group 80
+        ec2_group:
+          name: SG80
+          description: SG WB
+          vpc_id: vpc-0694e23cfb1bda350
+          region: us-east-2
+          aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+          aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+          rules:
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 0.0.0.0/0
+
+          rules_egress:
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 0.0.0.0/0
+              #cidr_ipv6: 64:ff9b::/96
+              group_name: SGAPP
+
+      - name: Creating ec2 group 22
+        ec2_group:
+          name: SG22
+          description: SG APPSERVER
+          vpc_id: vpc-0694e23cfb1bda350
+          region: us-east-2
+          aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+          aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+          rules:
+            - proto: tcp
+              from_port: 22
+              to_port: 22
+              cidr_ip: 0.0.0.0/0
+
+          rules_egress:
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 0.0.0.0/0
+              group_name: SGAPP
+
+
+
+
+#creacion EC2 (admin,webserver,appserver)
+
+      - ec2_instance:
+         aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+         aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+         region: us-east-2
+         name: "admin_pyxis22"
+         key_name: "key_centosh2"
+         vpc_subnet_id: subnet-059d2bcbad7383d08
+         instance_type: t2.micro
+         security_group: sg-0fb70fa99c50872a0
+         network:
+           assign_public_ip: true
+         image_id: ami-000e7ce4dd68e7a11
+         tags:
+           Environment: test-admin
+
+        register: ec2
+
+      - wait_for:
+           host: "{{ item.public_dns_name }}"
+           port: 22
+           delay: 60
+           timeout: 640
+           state: started
+        loop: "{{ ec2.instances }}"
+
+#creacion instancia webserver
+      - ec2_instance:
+         aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+         aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+         region: us-east-2
+         name: "webserver_pyxis80"
+         key_name: "key_centosh2"
+         vpc_subnet_id: subnet-059d2bcbad7383d08
+         instance_type: t2.micro
+         security_group: sg-0fb70fa99c50872a0
+         network:
+           assign_public_ip: true
+         image_id: ami-000e7ce4dd68e7a11
+         tags:
+           Environment: testansible
+
+        register: ec2
+
+      - wait_for:
+           host: "{{ item.public_dns_name }}"
+           port: 22
+           delay: 60
+           timeout: 640
+           state: started
+        loop: "{{ ec2.instances }}"
+
+#creacion appserver
+      - ec2_instance:
+         aws_access_key: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+         aws_secret_key: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+         region: us-east-2
+         name: "admin_pyxis22"
+         key_name: "key_centosh2"
+         vpc_subnet_id: subnet-059d2bcbad7383d08
+         instance_type: t2.micro
+         security_group: sg-0fb70fa99c50872a0
+         network:
+           assign_public_ip: true
+         image_id: ami-000e7ce4dd68e7a11
+         tags:
+           Environment: testansible
+
+        register: ec2
+
+      - wait_for:
+           host: "{{ item.public_dns_name }}"
+           port: 22
+           delay: 60
+           timeout: 640
+           state: started
+        loop: "{{ ec2.instances }}"
+
+#Add Repo for docker software
+      - name: Add repository
+        yum_repository:
+              name: docker
+              description: Docker YUM repo
+              baseurl: https://download.docker.com/linux/centos/8/x86_64/stable/
+              gpgcheck: no
+
+#install docker using package module
+      - name: Install docker
+        package:
+                name: docker-ce-3:20.10.7-3.el8.x86_64
+                state: present
+#Enable docekr service
+      - name: enable Docker services
+        service:
+                name: "docker"
+                state: started
+                enabled: yes
+
+      - name: Install Python3
+        package:
+           name: "python3"
+           state: present
+
+      - name: Install Docker SDK for Python3
+        pip:
+           name: "docker"
+           state: present
+
+      - name: Pull httpd Image from Docker Hub
+        docker_image:
+           name: "httpd"
+           source: pull
+
+      - name: Create Directory
+        file:
+           path: /webpages
+           state: directory
+
+      - name: Copy webpage content
+        copy:
+           content: "Hola Mundo!!\n"
+           dest: "/webpages/index.html"
+
+      - name: Launch Webserver Container
+        docker_container:
+           name: "webserver"
+           image: "httpd"
+           state: started
+           exposed_ports: "80"
+           ports: "80:80"
+           volumes: /webpages:/usr/local/apache2/htdocs
+
+           #disable firewall temporarily
+      - name: disabling firewall to access server from other host
+        command: systemctl stop firewalld
+
+
+
+
+
+
+...
